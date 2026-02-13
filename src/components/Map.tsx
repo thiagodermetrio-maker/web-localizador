@@ -1397,12 +1397,19 @@ export default function Map() {
   const [showBairrosAccordion, setShowBairrosAccordion] = useState<boolean>(false);
 
   useEffect(() => {
+    // Timestamps para controle de throttle
+    let lastRocadasFetch = 0;
+    let lastLocalizadoresFetch = 0;
+    let visibilityDebounceTimer: NodeJS.Timeout | null = null;
+    
     const fetchRocadas = async () => {
       try {
+        console.log('🔄 Buscando roçadas:', new Date().toLocaleTimeString());
         const response = await fetch('/api/rocada');
         const result = await response.json();
         if (result.success) {
           setRocadas(result.data);
+          lastRocadasFetch = Date.now();
         }
       } catch (error) {
         console.error('Erro ao carregar roçadas:', error);
@@ -1440,10 +1447,12 @@ export default function Map() {
 
     const fetchLocalizadores = async () => {
       try {
+        console.log('📍 Buscando localizadores:', new Date().toLocaleTimeString());
         const response = await fetch('/api/localizador');
         const result = await response.json();
         if (result.success) {
           setLocalizadores(result.data);
+          lastLocalizadoresFetch = Date.now();
         }
       } catch (error) {
         console.error('Erro ao carregar localizadores:', error);
@@ -1457,18 +1466,45 @@ export default function Map() {
 
     // Atualizar localizadores a cada 1 minuto
     const localizadoresInterval = setInterval(() => {
+      console.log('⏰ Interval: Buscando localizadores');
       fetchLocalizadores();
     }, 60000);
 
     // Sincronizar roçadas periodicamente para refletir mudanças feitas no app Expo (a cada 5 minutos)
     const rocadasInterval = setInterval(() => {
+      console.log('⏰ Interval: Buscando roçadas');
       fetchRocadas();
     }, 300000);
 
-    // Quando a aba/janela volta ao foco, busca imediatamente dados atualizados
+    // Quando a aba/janela volta ao foco, busca dados atualizados (com throttle e debounce para evitar chamadas excessivas)
     const handleVisibilityOrFocus = () => {
-      fetchRocadas();
-      fetchLocalizadores();
+      // Limpar timer anterior se existir
+      if (visibilityDebounceTimer) {
+        clearTimeout(visibilityDebounceTimer);
+      }
+      
+      // Debounce de 100ms para evitar chamadas duplicadas de eventos simultâneos
+      visibilityDebounceTimer = setTimeout(() => {
+        const now = Date.now();
+        const rocadasCooldown = 60000; // 1 minuto de cooldown para roçadas
+        const localizadoresCooldown = 30000; // 30 segundos de cooldown para localizadores
+        
+        // Só busca roçadas se passou tempo suficiente desde a última busca
+        if (now - lastRocadasFetch >= rocadasCooldown) {
+          console.log('👁️ Visibilidade/Foco: Buscando roçadas');
+          fetchRocadas();
+        } else {
+          console.log('⏸️ Cooldown ativo para roçadas, pulando fetch');
+        }
+        
+        // Só busca localizadores se passou tempo suficiente desde a última busca
+        if (now - lastLocalizadoresFetch >= localizadoresCooldown) {
+          console.log('👁️ Visibilidade/Foco: Buscando localizadores');
+          fetchLocalizadores();
+        } else {
+          console.log('⏸️ Cooldown ativo para localizadores, pulando fetch');
+        }
+      }, 100);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
@@ -1477,6 +1513,9 @@ export default function Map() {
     return () => {
       clearInterval(localizadoresInterval);
       clearInterval(rocadasInterval);
+      if (visibilityDebounceTimer) {
+        clearTimeout(visibilityDebounceTimer);
+      }
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
@@ -1586,10 +1625,12 @@ export default function Map() {
 
   // Função para forçar atualização manual de todos os dados
   const handleForceRefresh = async () => {
+    console.log('🔄 REFRESH MANUAL - Atualizando todos os dados');
     setIsRefreshing(true);
     
     try {
       // Buscar roçadas
+      console.log('🔄 Refresh Manual: Buscando roçadas');
       const rocadasResponse = await fetch('/api/rocada');
       const rocadasResult = await rocadasResponse.json();
       if (rocadasResult.success) {
@@ -1597,6 +1638,7 @@ export default function Map() {
       }
 
       // Buscar localizadores
+      console.log('📍 Refresh Manual: Buscando localizadores');
       const localizadoresResponse = await fetch('/api/localizador');
       const localizadoresResult = await localizadoresResponse.json();
       if (localizadoresResult.success) {
@@ -1604,13 +1646,16 @@ export default function Map() {
       }
 
       // Buscar bairros
+      console.log('🗺️ Refresh Manual: Buscando bairros');
       const bairrosResponse = await fetch('/api/bairros');
       const bairrosResult = await bairrosResponse.json();
       if (bairrosResult.success) {
         setBairros(bairrosResult.data);
       }
+      
+      console.log('✅ Refresh Manual: Dados atualizados com sucesso');
     } catch (error) {
-      console.error('Erro ao atualizar dados:', error);
+      console.error('❌ Erro ao atualizar dados:', error);
     } finally {
       // Delay mínimo para mostrar animação de loading
       setTimeout(() => {
